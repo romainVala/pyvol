@@ -14,11 +14,11 @@ from generate_df import generate_df
 from keras.wrappers.scikit_learn import KerasClassifier
 from sklearn.metrics import roc_curve, auc
 
-#from vis.utils import utils
-#from keras import activations
-#import matplotlib.cm as cm
-#from vis.visualization import visualize_saliency, overlay
-#from vis.visualization import visualize_cam
+from vis.utils import utils
+from keras import activations
+import matplotlib.cm as cm
+from vis.visualization import visualize_saliency, overlay
+from vis.visualization import visualize_cam
 
 
 
@@ -37,7 +37,7 @@ def summary_model_training(model, prefix):
     plt.plot(history['loss'])
     plt.plot(history['val_loss'])
     plt.title('model loss')
-    plt.ylabel('accuracy')
+    plt.ylabel('loss')
     plt.xlabel('epoch')
     plt.legend(['train', 'val'], loc='upper left')
     model_name = model.name
@@ -136,7 +136,7 @@ def model_display(model,  name = "output.jpg", orientation = "rect", font_path =
     print("Creation of images finished")
     return acc, t_p, t_n
 
-def test_noise_characs(model, dataset_test, measure = ["RMS", "MSE", "Corr"], prefix = "", normalization = "global", conditions = None):
+def test_noise_characs(model, dataset_test, measure = ["RMS", "MSE", "Corr"], prefix = "", normalization = None, conditions = None):
     if dataset_test[-3:] == "csv":
         tab = pd.read_csv(prefix + dataset_test, sep = ",", index_col = 0)
     else:
@@ -231,7 +231,7 @@ def test_noise_characs(model, dataset_test, measure = ["RMS", "MSE", "Corr"], pr
         plt.savefig(file_path+model_name+"_"+meas+".png")
     print("Noise evaluation finished")
 
-def test_slice(model, dataset_test, num_choices = 40, normalization = "global", prefix = "", conditions=None):
+def test_slice(model, dataset_test, num_choices = 40, normalization = None, prefix = "", conditions=None, measure = "RMS", threshold = (10, 20)):
     if dataset_test[-3:] == "csv":
         csv = pd.read_csv(prefix + dataset_test, sep = ",", index_col = 0)
     else:
@@ -239,57 +239,57 @@ def test_slice(model, dataset_test, num_choices = 40, normalization = "global", 
     if conditions is not None:
         csv = csv[apply_conditions_on_dataset(csv, conditions)]
     ind_not_noised = np.random.choice(np.where(csv.noise.values == 1)[0], num_choices)
-    ind_small_RMS = np.random.choice(np.where((csv.noise.values == 0) & (csv.RMS.values < 20))[0], num_choices)
-    ind_med_RMS = np.random.choice(np.where((csv.noise.values == 0) & (csv.RMS.values > 20) & (csv.RMS.values < 30))[0], num_choices)
-    ind_big_RMS = np.random.choice(np.where((csv.noise.values == 0) & (csv.RMS.values > 30))[0], num_choices)
+    ind_small = np.random.choice(np.where((csv.noise.values == 0) & (csv[measure].values < threshold[0]))[0], num_choices)
+    ind_med = np.random.choice(np.where((csv.noise.values == 0) & (csv[measure].values > threshold[0]) & (csv.RMS.values < threshold[1]))[0], num_choices)
+    ind_big = np.random.choice(np.where((csv.noise.values == 0) & (csv[measure].values > threshold[1]))[0], num_choices)
     
     if normalization == "global":
         not_noised_images = np.array([normalization_func(nb.load(prefix +csv.iloc[k].img_file).get_fdata()) for k in tqdm(ind_not_noised)])
-        small_RMS_images = np.array([normalization_func(nb.load(prefix +csv.iloc[k].img_file).get_fdata()) for k in tqdm(ind_small_RMS)])
-        med_RMS_images = np.array([normalization_func(nb.load(prefix +csv.iloc[k].img_file).get_fdata()) for k in tqdm(ind_med_RMS)])
-        big_RMS_images = np.array([normalization_func(nb.load(prefix +csv.iloc[k].img_file).get_fdata()) for k in tqdm(ind_big_RMS)])
+        small_images = np.array([normalization_func(nb.load(prefix +csv.iloc[k].img_file).get_fdata()) for k in tqdm(ind_small)])
+        med_images = np.array([normalization_func(nb.load(prefix +csv.iloc[k].img_file).get_fdata()) for k in tqdm(ind_med)])
+        big_images = np.array([normalization_func(nb.load(prefix +csv.iloc[k].img_file).get_fdata()) for k in tqdm(ind_big)])
 
     elif normalization == "local":
         temp1 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if char == "/"][0] for k in (ind_not_noised)]
         temp2 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if csv.iloc[k].img_file[pos:pos+4]==".nii"][-1] for k in (ind_not_noised)]
         not_noised_images =  np.array([normalization_mask(nb.load(prefix +csv.iloc[k].img_file).get_fdata(), nb.load(prefix + "masks"+csv.iloc[k].img_file[temp1[j]:temp2[j]]+"_mask.nii.gz").get_fdata())\
  for j, k in tqdm(enumerate(ind_not_noised))]) 
-        temp1 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if char == "/"][0] for k in (ind_small_RMS)]
-        temp2 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if csv.iloc[k].img_file[pos:pos+4]==".nii"][-1] for k in (ind_small_RMS)]
-        small_RMS_images =  np.array([normalization_mask(nb.load(prefix +csv.iloc[k].img_file).get_fdata(), nb.load(prefix + "masks"+csv.iloc[k].img_file[temp1[j]:temp2[j]]+"_mask.nii.gz").get_fdata())\
- for j, k in tqdm(enumerate(ind_small_RMS))]) 
-        temp1 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if char == "/"][0] for k in (ind_med_RMS)]
-        temp2 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if csv.iloc[k].img_file[pos:pos+4]==".nii"][-1] for k in (ind_med_RMS)]
-        med_RMS_images =  np.array([normalization_mask(nb.load(prefix +csv.iloc[k].img_file).get_fdata(), nb.load(prefix + "masks"+csv.iloc[k].img_file[temp1[j]:temp2[j]]+"_mask.nii.gz").get_fdata())\
- for j, k in tqdm(enumerate(ind_med_RMS))]) 
-        temp1 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if char == "/"][0] for k in (ind_big_RMS)]
-        temp2 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if csv.iloc[k].img_file[pos:pos+4]==".nii"][-1] for k in (ind_big_RMS)]
-        big_RMS_images =  np.array([normalization_mask(nb.load(prefix +csv.iloc[k].img_file).get_fdata(), nb.load(prefix + "masks"+csv.iloc[k].img_file[temp1[j]:temp2[j]]+"_mask.nii.gz").get_fdata())\
- for j, k in tqdm(enumerate(ind_big_RMS))]) 
+        temp1 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if char == "/"][0] for k in (ind_small)]
+        temp2 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if csv.iloc[k].img_file[pos:pos+4]==".nii"][-1] for k in (ind_small)]
+        small_images =  np.array([normalization_mask(nb.load(prefix +csv.iloc[k].img_file).get_fdata(), nb.load(prefix + "masks"+csv.iloc[k].img_file[temp1[j]:temp2[j]]+"_mask.nii.gz").get_fdata())\
+ for j, k in tqdm(enumerate(ind_small))]) 
+        temp1 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if char == "/"][0] for k in (ind_med)]
+        temp2 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if csv.iloc[k].img_file[pos:pos+4]==".nii"][-1] for k in (ind_med)]
+        med_images =  np.array([normalization_mask(nb.load(prefix +csv.iloc[k].img_file).get_fdata(), nb.load(prefix + "masks"+csv.iloc[k].img_file[temp1[j]:temp2[j]]+"_mask.nii.gz").get_fdata())\
+ for j, k in tqdm(enumerate(ind_med))]) 
+        temp1 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if char == "/"][0] for k in (ind_big)]
+        temp2 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if csv.iloc[k].img_file[pos:pos+4]==".nii"][-1] for k in (ind_big)]
+        big_images =  np.array([normalization_mask(nb.load(prefix +csv.iloc[k].img_file).get_fdata(), nb.load(prefix + "masks"+csv.iloc[k].img_file[temp1[j]:temp2[j]]+"_mask.nii.gz").get_fdata())\
+ for j, k in tqdm(enumerate(ind_big))]) 
      
     elif normalization == "brain":
         temp1 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if char == "/"][0] for k in (ind_not_noised)]
         temp2 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if csv.iloc[k].img_file[pos:pos+4]==".nii"][-1] for k in (ind_not_noised)]
         not_noised_images =  np.array([normalization_brain(nb.load(prefix +csv.iloc[k].img_file).get_fdata(), nb.load(prefix + "masks"+csv.iloc[k].img_file[temp1[j]:temp2[j]]+"_mask.nii.gz").get_fdata())\
  for j, k in tqdm(enumerate(ind_not_noised))]) 
-        temp1 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if char == "/"][0] for k in (ind_small_RMS)]
-        temp2 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if csv.iloc[k].img_file[pos:pos+4]==".nii"][-1] for k in (ind_small_RMS)]
-        small_RMS_images =  np.array([normalization_brain(nb.load(prefix +csv.iloc[k].img_file).get_fdata(), nb.load(prefix + "masks"+csv.iloc[k].img_file[temp1[j]:temp2[j]]+"_mask.nii.gz").get_fdata())\
- for j, k in tqdm(enumerate(ind_small_RMS))]) 
-        temp1 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if char == "/"][0] for k in (ind_med_RMS)]
-        temp2 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if csv.iloc[k].img_file[pos:pos+4]==".nii"][-1] for k in (ind_med_RMS)]
-        med_RMS_images =  np.array([normalization_brain(nb.load(prefix +csv.iloc[k].img_file).get_fdata(), nb.load(prefix + "masks"+csv.iloc[k].img_file[temp1[j]:temp2[j]]+"_mask.nii.gz").get_fdata())\
- for j, k in tqdm(enumerate(ind_med_RMS))]) 
-        temp1 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if char == "/"][0] for k in (ind_big_RMS)]
-        temp2 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if csv.iloc[k].img_file[pos:pos+4]==".nii"][-1] for k in (ind_big_RMS)]
-        big_RMS_images =  np.array([normalization_brain(nb.load(prefix +csv.iloc[k].img_file).get_fdata(), nb.load(prefix + "masks"+csv.iloc[k].img_file[temp1[j]:temp2[j]]+"_mask.nii.gz").get_fdata())\
- for j, k in tqdm(enumerate(ind_big_RMS))]) 
+        temp1 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if char == "/"][0] for k in (ind_small)]
+        temp2 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if csv.iloc[k].img_file[pos:pos+4]==".nii"][-1] for k in (ind_small)]
+        small_images =  np.array([normalization_brain(nb.load(prefix +csv.iloc[k].img_file).get_fdata(), nb.load(prefix + "masks"+csv.iloc[k].img_file[temp1[j]:temp2[j]]+"_mask.nii.gz").get_fdata())\
+ for j, k in tqdm(enumerate(ind_small))]) 
+        temp1 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if char == "/"][0] for k in (ind_med)]
+        temp2 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if csv.iloc[k].img_file[pos:pos+4]==".nii"][-1] for k in (ind_med)]
+        med_images =  np.array([normalization_brain(nb.load(prefix +csv.iloc[k].img_file).get_fdata(), nb.load(prefix + "masks"+csv.iloc[k].img_file[temp1[j]:temp2[j]]+"_mask.nii.gz").get_fdata())\
+ for j, k in tqdm(enumerate(ind_med))]) 
+        temp1 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if char == "/"][0] for k in (ind_big)]
+        temp2 = [[pos for pos, char in enumerate(csv.iloc[k].img_file) if csv.iloc[k].img_file[pos:pos+4]==".nii"][-1] for k in (ind_big)]
+        big_images =  np.array([normalization_brain(nb.load(prefix +csv.iloc[k].img_file).get_fdata(), nb.load(prefix + "masks"+csv.iloc[k].img_file[temp1[j]:temp2[j]]+"_mask.nii.gz").get_fdata())\
+ for j, k in tqdm(enumerate(ind_big))]) 
 
     else:
         not_noised_images = np.array([nb.load(prefix + csv.iloc[k].img_file).get_fdata() for k in tqdm(ind_not_noised)])
-        small_RMS_images = np.array([nb.load(prefix +csv.iloc[k].img_file).get_fdata() for k in tqdm(ind_small_RMS)])
-        med_RMS_images = np.array([nb.load(prefix +csv.iloc[k].img_file).get_fdata() for k in tqdm(ind_med_RMS)])
-        big_RMS_images = np.array([nb.load(prefix +csv.iloc[k].img_file).get_fdata() for k in tqdm(ind_big_RMS)])
+        small_images = np.array([nb.load(prefix +csv.iloc[k].img_file).get_fdata() for k in tqdm(ind_small)])
+        med_images = np.array([nb.load(prefix +csv.iloc[k].img_file).get_fdata() for k in tqdm(ind_med)])
+        big_images = np.array([nb.load(prefix +csv.iloc[k].img_file).get_fdata() for k in tqdm(ind_big)])
     
     shape_im = not_noised_images[0].shape
     sag_slice = int(0.5*shape_im[0])    
@@ -298,36 +298,36 @@ def test_slice(model, dataset_test, num_choices = 40, normalization = "global", 
     ax2_slice = int(0.6*shape_im[2])
     
     not_noised_predict = np.zeros((0, 2))
-    small_RMS_predict = np.zeros((0, 2))
-    med_RMS_predict = np.zeros((0, 2))
-    big_RMS_predict = np.zeros((0, 2))
+    small_predict = np.zeros((0, 2))
+    med_predict = np.zeros((0, 2))
+    big_predict = np.zeros((0, 2))
     for k in tqdm(range(num_choices)):
         XX_not_noised = []
-        XX_small_RMS = []
-        XX_med_RMS = []
-        XX_big_RMS = []
+        XX_small = []
+        XX_med = []
+        XX_big = []
         for sliice in (range(int(0.2*shape_im[0]), int(0.8*shape_im[0]))):
             XX_not_noised.append(np.expand_dims(quadriview(not_noised_images[k], sliice, cor_slice, ax1_slice, ax2_slice) ,2))
-            XX_small_RMS.append(np.expand_dims(quadriview(small_RMS_images[k], sliice, cor_slice, ax1_slice, ax2_slice) ,2))
-            XX_med_RMS.append(np.expand_dims(quadriview(med_RMS_images[k], sliice, cor_slice, ax1_slice, ax2_slice) ,2))
-            XX_big_RMS.append(np.expand_dims(quadriview(big_RMS_images[k], sliice, cor_slice, ax1_slice, ax2_slice) ,2))
+            XX_small.append(np.expand_dims(quadriview(small_images[k], sliice, cor_slice, ax1_slice, ax2_slice) ,2))
+            XX_med.append(np.expand_dims(quadriview(med_images[k], sliice, cor_slice, ax1_slice, ax2_slice) ,2))
+            XX_big.append(np.expand_dims(quadriview(big_images[k], sliice, cor_slice, ax1_slice, ax2_slice) ,2))
         XX_not_noised = np.array(XX_not_noised)
-        XX_small_RMS = np.array(XX_small_RMS)
-        XX_med_RMS = np.array(XX_med_RMS)
-        XX_big_RMS = np.array(XX_big_RMS)
+        XX_small = np.array(XX_small)
+        XX_med = np.array(XX_med)
+        XX_big = np.array(XX_big)
         not_noised_predict = np.concatenate((not_noised_predict, model.predict(XX_not_noised)), axis = 0)
-        small_RMS_predict = np.concatenate((small_RMS_predict, model.predict(XX_small_RMS)), axis = 0)
-        med_RMS_predict = np.concatenate((med_RMS_predict, model.predict(XX_med_RMS)), axis = 0)
-        big_RMS_predict = np.concatenate((big_RMS_predict, model.predict(XX_big_RMS)), axis = 0)
+        small_predict = np.concatenate((small_predict, model.predict(XX_small)), axis = 0)
+        med_predict = np.concatenate((med_predict, model.predict(XX_med)), axis = 0)
+        big_predict = np.concatenate((big_predict, model.predict(XX_big)), axis = 0)
     
     fig = plt.figure(figsize = (15, 15))
     gs = gridspec.GridSpec(nrows=3, ncols=2, figure=fig)
 
     ax0 = fig.add_subplot(gs[0, :])
     plt.plot(np.array(range(int(0.2*shape_im[0]), int(0.8*shape_im[0])))/shape_im[0], np.mean(not_noised_predict[:,0].reshape((num_choices, -1)), axis = 0), label = "Not noised image")
-    plt.plot(np.array(range(int(0.2*shape_im[0]), int(0.8*shape_im[0])))/shape_im[0], np.mean(small_RMS_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Small RMS image")
-    plt.plot(np.array(range(int(0.2*shape_im[0]), int(0.8*shape_im[0])))/shape_im[0], np.mean(med_RMS_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Middle-range RMS image")
-    plt.plot(np.array(range(int(0.2*shape_im[0]), int(0.8*shape_im[0])))/shape_im[0], np.mean(big_RMS_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "High RMS image")
+    plt.plot(np.array(range(int(0.2*shape_im[0]), int(0.8*shape_im[0])))/shape_im[0], np.mean(small_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Weakly Noised image")
+    plt.plot(np.array(range(int(0.2*shape_im[0]), int(0.8*shape_im[0])))/shape_im[0], np.mean(med_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Mildly noised image")
+    plt.plot(np.array(range(int(0.2*shape_im[0]), int(0.8*shape_im[0])))/shape_im[0], np.mean(big_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Seriously noised image")
     plt.xlabel("Slice position")
     plt.title("Sagittal slice")
     plt.ylabel("Misclassification proba")
@@ -335,33 +335,33 @@ def test_slice(model, dataset_test, num_choices = 40, normalization = "global", 
     
 
     not_noised_predict = np.zeros((0, 2))
-    small_RMS_predict = np.zeros((0, 2))
-    med_RMS_predict = np.zeros((0, 2))
-    big_RMS_predict = np.zeros((0, 2))
+    small_predict = np.zeros((0, 2))
+    med_predict = np.zeros((0, 2))
+    big_predict = np.zeros((0, 2))
     for k in tqdm(range(num_choices)):
         XX_not_noised = []
-        XX_small_RMS = []
-        XX_med_RMS = []
-        XX_big_RMS = []
+        XX_small = []
+        XX_med = []
+        XX_big = []
         for sliice in (range(int(0.2*shape_im[1]), int(0.8*shape_im[1]))):
             XX_not_noised.append(np.expand_dims(quadriview(not_noised_images[k], sag_slice, sliice, ax1_slice, ax2_slice) ,2))
-            XX_small_RMS.append(np.expand_dims(quadriview(small_RMS_images[k], sag_slice, sliice, ax1_slice, ax2_slice) ,2))
-            XX_med_RMS.append(np.expand_dims(quadriview(med_RMS_images[k], sag_slice, sliice, ax1_slice, ax2_slice) ,2))
-            XX_big_RMS.append(np.expand_dims(quadriview(big_RMS_images[k], sag_slice, sliice, ax1_slice, ax2_slice) ,2))
+            XX_small.append(np.expand_dims(quadriview(small_images[k], sag_slice, sliice, ax1_slice, ax2_slice) ,2))
+            XX_med.append(np.expand_dims(quadriview(med_images[k], sag_slice, sliice, ax1_slice, ax2_slice) ,2))
+            XX_big.append(np.expand_dims(quadriview(big_images[k], sag_slice, sliice, ax1_slice, ax2_slice) ,2))
         XX_not_noised = np.array(XX_not_noised)
-        XX_small_RMS = np.array(XX_small_RMS)
-        XX_med_RMS = np.array(XX_med_RMS)
-        XX_big_RMS = np.array(XX_big_RMS)
+        XX_small = np.array(XX_small)
+        XX_med = np.array(XX_med)
+        XX_big = np.array(XX_big)
         not_noised_predict = np.concatenate((not_noised_predict, model.predict(XX_not_noised)), axis = 0)
-        small_RMS_predict = np.concatenate((small_RMS_predict, model.predict(XX_small_RMS)), axis = 0)
-        med_RMS_predict = np.concatenate((med_RMS_predict, model.predict(XX_med_RMS)), axis = 0)
-        big_RMS_predict = np.concatenate((big_RMS_predict, model.predict(XX_big_RMS)), axis = 0)
+        small_predict = np.concatenate((small_predict, model.predict(XX_small)), axis = 0)
+        med_predict = np.concatenate((med_predict, model.predict(XX_med)), axis = 0)
+        big_predict = np.concatenate((big_predict, model.predict(XX_big)), axis = 0)
     
     ax1 = fig.add_subplot(gs[1, :])
     plt.plot(np.array(range(int(0.2*shape_im[1]), int(0.8*shape_im[1])))/shape_im[1], np.mean(not_noised_predict[:,0].reshape((num_choices, -1)), axis = 0), label = "Not noised image")
-    plt.plot(np.array(range(int(0.2*shape_im[1]), int(0.8*shape_im[1])))/shape_im[1], np.mean(small_RMS_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Small RMS image")
-    plt.plot(np.array(range(int(0.2*shape_im[1]), int(0.8*shape_im[1])))/shape_im[1], np.mean(med_RMS_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Middle-range RMS image")
-    plt.plot(np.array(range(int(0.2*shape_im[1]), int(0.8*shape_im[1])))/shape_im[1], np.mean(big_RMS_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "High RMS image")
+    plt.plot(np.array(range(int(0.2*shape_im[1]), int(0.8*shape_im[1])))/shape_im[1], np.mean(small_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Weakly Noised image")
+    plt.plot(np.array(range(int(0.2*shape_im[1]), int(0.8*shape_im[1])))/shape_im[1], np.mean(med_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Mildly noised image")
+    plt.plot(np.array(range(int(0.2*shape_im[1]), int(0.8*shape_im[1])))/shape_im[1], np.mean(big_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Seriously noised image")
     plt.xlabel("Slice position")
     plt.ylabel("Misclassification proba")
     plt.title("Coronal slice")
@@ -370,34 +370,34 @@ def test_slice(model, dataset_test, num_choices = 40, normalization = "global", 
     
 
     not_noised_predict = np.zeros((0, 2))
-    small_RMS_predict = np.zeros((0, 2))
-    med_RMS_predict = np.zeros((0, 2))
-    big_RMS_predict = np.zeros((0, 2))
+    small_predict = np.zeros((0, 2))
+    med_predict = np.zeros((0, 2))
+    big_predict = np.zeros((0, 2))
 
     for k in tqdm(range(num_choices)):
         XX_not_noised = []
-        XX_small_RMS = []
-        XX_med_RMS = []
-        XX_big_RMS = []
+        XX_small = []
+        XX_med = []
+        XX_big = []
         for sliice in (range(int(0.2*shape_im[2]), int(0.5*shape_im[2]))):
             XX_not_noised.append(np.expand_dims(quadriview(not_noised_images[k], sag_slice, cor_slice, sliice, ax2_slice) ,2))
-            XX_small_RMS.append(np.expand_dims(quadriview(small_RMS_images[k], sag_slice, cor_slice, sliice, ax2_slice) ,2))
-            XX_med_RMS.append(np.expand_dims(quadriview(med_RMS_images[k], sag_slice, cor_slice, sliice, ax2_slice) ,2))
-            XX_big_RMS.append(np.expand_dims(quadriview(big_RMS_images[k], sag_slice, cor_slice, sliice, ax2_slice) ,2))
+            XX_small.append(np.expand_dims(quadriview(small_images[k], sag_slice, cor_slice, sliice, ax2_slice) ,2))
+            XX_med.append(np.expand_dims(quadriview(med_images[k], sag_slice, cor_slice, sliice, ax2_slice) ,2))
+            XX_big.append(np.expand_dims(quadriview(big_images[k], sag_slice, cor_slice, sliice, ax2_slice) ,2))
         XX_not_noised = np.array(XX_not_noised)
-        XX_small_RMS = np.array(XX_small_RMS)
-        XX_med_RMS = np.array(XX_med_RMS)
-        XX_big_RMS = np.array(XX_big_RMS)
+        XX_small = np.array(XX_small)
+        XX_med = np.array(XX_med)
+        XX_big = np.array(XX_big)
         not_noised_predict = np.concatenate((not_noised_predict, model.predict(XX_not_noised)), axis = 0)
-        small_RMS_predict = np.concatenate((small_RMS_predict, model.predict(XX_small_RMS)), axis = 0)
-        med_RMS_predict = np.concatenate((med_RMS_predict, model.predict(XX_med_RMS)), axis = 0)
-        big_RMS_predict = np.concatenate((big_RMS_predict, model.predict(XX_big_RMS)), axis = 0)
+        small_predict = np.concatenate((small_predict, model.predict(XX_small)), axis = 0)
+        med_predict = np.concatenate((med_predict, model.predict(XX_med)), axis = 0)
+        big_predict = np.concatenate((big_predict, model.predict(XX_big)), axis = 0)
     
     ax2 = fig.add_subplot(gs[2, 0])
     plt.plot(np.array(range(int(0.2*shape_im[2]), int(0.5*shape_im[2])))/shape_im[2], np.mean(not_noised_predict[:,0].reshape((num_choices, -1)), axis = 0), label = "Not noised image")
-    plt.plot(np.array(range(int(0.2*shape_im[2]), int(0.5*shape_im[2])))/shape_im[2], np.mean(small_RMS_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Small RMS image")
-    plt.plot(np.array(range(int(0.2*shape_im[2]), int(0.5*shape_im[2])))/shape_im[2], np.mean(med_RMS_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Middle-range RMS image")
-    plt.plot(np.array(range(int(0.2*shape_im[2]), int(0.5*shape_im[2])))/shape_im[2], np.mean(big_RMS_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "High RMS image")
+    plt.plot(np.array(range(int(0.2*shape_im[2]), int(0.5*shape_im[2])))/shape_im[2], np.mean(small_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Small RMS image")
+    plt.plot(np.array(range(int(0.2*shape_im[2]), int(0.5*shape_im[2])))/shape_im[2], np.mean(med_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Middle-range RMS image")
+    plt.plot(np.array(range(int(0.2*shape_im[2]), int(0.5*shape_im[2])))/shape_im[2], np.mean(big_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "High RMS image")
     plt.xlabel("Slice position")
     plt.ylabel("Misclassification proba")
     plt.title("Axial slice (down)")
@@ -406,35 +406,35 @@ def test_slice(model, dataset_test, num_choices = 40, normalization = "global", 
     
     
     not_noised_predict = np.zeros((0, 2))
-    small_RMS_predict = np.zeros((0, 2))
-    med_RMS_predict = np.zeros((0, 2))
-    big_RMS_predict = np.zeros((0, 2))
+    small_predict = np.zeros((0, 2))
+    med_predict = np.zeros((0, 2))
+    big_predict = np.zeros((0, 2))
 
     for k in tqdm(range(num_choices)):
         XX_not_noised = []
-        XX_small_RMS = []
-        XX_med_RMS = []
-        XX_big_RMS = []
+        XX_small = []
+        XX_med = []
+        XX_big = []
 
         for sliice in (range(int(0.5*shape_im[2]), int(0.8*shape_im[2]))):
             XX_not_noised.append(np.expand_dims(quadriview(not_noised_images[k], sag_slice, cor_slice, ax1_slice, sliice) ,2))
-            XX_small_RMS.append(np.expand_dims(quadriview(small_RMS_images[k], sag_slice, cor_slice, ax1_slice, sliice) ,2))
-            XX_med_RMS.append(np.expand_dims(quadriview(med_RMS_images[k], sag_slice, cor_slice, ax1_slice, sliice) ,2))
-            XX_big_RMS.append(np.expand_dims(quadriview(big_RMS_images[k], sag_slice, cor_slice, ax1_slice, sliice) ,2))
+            XX_small.append(np.expand_dims(quadriview(small_images[k], sag_slice, cor_slice, ax1_slice, sliice) ,2))
+            XX_med.append(np.expand_dims(quadriview(med_images[k], sag_slice, cor_slice, ax1_slice, sliice) ,2))
+            XX_big.append(np.expand_dims(quadriview(big_images[k], sag_slice, cor_slice, ax1_slice, sliice) ,2))
         XX_not_noised = np.array(XX_not_noised)
-        XX_small_RMS = np.array(XX_small_RMS)
-        XX_med_RMS = np.array(XX_med_RMS)
-        XX_big_RMS = np.array(XX_big_RMS)
+        XX_small = np.array(XX_small)
+        XX_med = np.array(XX_med)
+        XX_big = np.array(XX_big)
         not_noised_predict = np.concatenate((not_noised_predict, model.predict(XX_not_noised)), axis = 0)
-        small_RMS_predict = np.concatenate((small_RMS_predict, model.predict(XX_small_RMS)), axis = 0)
-        med_RMS_predict = np.concatenate((med_RMS_predict, model.predict(XX_med_RMS)), axis = 0)
-        big_RMS_predict = np.concatenate((big_RMS_predict, model.predict(XX_big_RMS)), axis = 0)
+        small_predict = np.concatenate((small_predict, model.predict(XX_small)), axis = 0)
+        med_predict = np.concatenate((med_predict, model.predict(XX_med)), axis = 0)
+        big_predict = np.concatenate((big_predict, model.predict(XX_big)), axis = 0)
         
     ax3 = fig.add_subplot(gs[2, 1])
     plt.plot(np.array(range(int(0.5*shape_im[2]), int(0.8*shape_im[2])))/shape_im[2], np.mean(not_noised_predict[:,0].reshape((num_choices, -1)), axis = 0), label = "Not noised image")
-    plt.plot(np.array(range(int(0.5*shape_im[2]), int(0.8*shape_im[2])))/shape_im[2], np.mean(small_RMS_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Small RMS image")
-    plt.plot(np.array(range(int(0.5*shape_im[2]), int(0.8*shape_im[2])))/shape_im[2], np.mean(med_RMS_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Middle-range RMS image")
-    plt.plot(np.array(range(int(0.5*shape_im[2]), int(0.8*shape_im[2])))/shape_im[2], np.mean(big_RMS_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "High RMS image")
+    plt.plot(np.array(range(int(0.5*shape_im[2]), int(0.8*shape_im[2])))/shape_im[2], np.mean(small_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Small RMS image")
+    plt.plot(np.array(range(int(0.5*shape_im[2]), int(0.8*shape_im[2])))/shape_im[2], np.mean(med_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "Middle-range RMS image")
+    plt.plot(np.array(range(int(0.5*shape_im[2]), int(0.8*shape_im[2])))/shape_im[2], np.mean(big_predict[:,1].reshape((num_choices, -1)), axis = 0), label = "High RMS image")
     plt.xlabel("Slice position")
     plt.ylabel("Misclassification proba")
     plt.title("Axial slice (up)")
@@ -474,7 +474,7 @@ def ROC_curve(model, seed = None, prefix = "", **kwargs):
     plt.savefig(file_path+ "ROC_"+model_name+".jpg")
     print("ROC Curve generated!")
 
-"""    
+
 def features_heatmap(model, prefix = "", batch_size = 16, **kwargs):
     pc_test = generators.Quadriview_DataGenerator(batch_size = batch_size, prefix = prefix, **kwargs)
     pc_test.metadata;
@@ -593,7 +593,7 @@ def features_heatmap(model, prefix = "", batch_size = 16, **kwargs):
         axsd[k, 2].get_yaxis().set_visible(False)
 
     figd.savefig(file_path+"heat_map_diff_"+model_name+".png")
-"""
+
     
     
     

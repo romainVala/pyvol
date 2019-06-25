@@ -176,7 +176,8 @@ def generate_figures(l_in, slices_infos=None, mask_info=None, fref = None, displ
         A size parameter
         
     And produces for each image as input an image (in png) composed of the differents views wanted (produced in the folder 
-    computed_images) and a histogram (in the file histogram) giving the repartition of the values on the mask 
+    computed_images) and a histogram (in the file histogram) giving the repartition of the values on the mask.
+    The final figure is filled from the top to the bottom and from the left to the right (column 1 then column 2...)
     """
     
     if not os.path.exists("histogramme"):
@@ -273,14 +274,11 @@ def generate_figures(l_in, slices_infos=None, mask_info=None, fref = None, displ
             v_min, v_max, v_min_f, v_max_f = scaling_func(temp_im, temp_mask, scaling, scaling_values)
             matrix_slice, mask_slice = get_slices(temp_im, temp_mask, acoreg, view, type_pos, pos, mask_cut_pix)
             list_matrix.append((matrix_slice, mask_slice,v_min, v_max, v_min_f, v_max_f))
-            
-        tab_abs = np.array([[list_matrix[i*display_order[1]+k][0].shape[1] for k in range(display_order[1]) ] for i in range(display_order[0])])
-        tab_ord = np.array([[list_matrix[i*display_order[1]+k][0].shape[0] for k in range(display_order[1]) ] for i in range(display_order[0])])
 
-        
-        abs_max= np.max(np.sum(tab_abs, axis = 1))
-        ord_max = np.max(np.sum(tab_ord, axis = 0))
-        figure = np.zeros((abs_max, ord_max, 4)).astype(np.uint8)
+        abs_max= np.max([m[0].shape[1] for m in list_matrix])
+        ord_max= np.max([m[0].shape[0] for m in list_matrix])
+
+        figure = np.zeros((display_order[1]*abs_max, display_order[0]*ord_max, 4)).astype(np.uint8)
         curseur_abs = 0
         curseur_ord=0
         for j, item in enumerate(list_matrix):
@@ -288,25 +286,27 @@ def generate_figures(l_in, slices_infos=None, mask_info=None, fref = None, displ
             if mask_info[j][0] != "mask_font":
                 temp = (np.uint8(255*(colormap(matrix_slice.T/(v_max - v_min))).astype(np.float64)))
                 figure[curseur_abs:curseur_abs+temp.shape[0],
-                      curseur_ord:curseur_ord+temp.shape[1]]= temp
+                      curseur_ord:curseur_ord+temp.shape[1]]= np.flipud(temp)
                       
             else:
                 temp = (np.uint8(255*
                      (colormap_noise((matrix_slice.T/(v_max_f - v_min_f) * np.logical_not(mask_slice).T).astype(np.float64))
                      +(colormap((matrix_slice/(v_max - v_min) * mask_slice).T).astype(np.float64)))))
                 figure[curseur_abs: curseur_abs+temp.shape[0],
-                      curseur_ord:curseur_ord+temp.shape[1]] = temp
+                      curseur_ord:curseur_ord+temp.shape[1]] = np.flipud(temp)
             if (j+1)%display_order[1] == 0:
                 curseur_abs = 0
-                curseur_ord += np.max(tab_ord[j//display_order[1],:])
-            else:
-                curseur_abs += temp.shape[0]
+                curseur_ord += ord_max
+            else:din = din.iloc[0]
+                curseur_abs += abs_max
                      
         #figure=np.transpose(figure, (0,1,2))
         #fig.tight_layout()
-        #plt.subplots_adjust(wspace=0, hspace=0, left=0.0, right=1.0, bottom=0.0, top=1.0)
+        plt.subplots_adjust(wspace=0, hspace=0, left=0.0, right=1.0, bottom=0.0, top=1.0)
         fig, axs = plt.subplots(1,1,figsize = (40, 40))
-        axs.imshow(figure, origin = "lower")
+        axs.imshow(figure)#, origin = "lower")
+        #for k in range(display_order[1]):
+        #    plt.plot((k*display_order[1], 0), (y1, y2), 'k-')
         axs.axis("off")
         fig.savefig("computed_images/fig_"+str(i)+".png",   facecolor ="k", bbox_inches='tight')
         print("Done for figure "+str(i))
@@ -345,9 +345,12 @@ if __name__ == "__main__":
 
     ind_sel = np.random.randint(0,ds.shape[0],2)
     din = ds.iloc[ind_sel,1] #[ds.iloc[ii,1] for ii in ind_sel]
-    fin = uf.gfile(din.tolist() ,'^s.*nii')
+    magie = din.tolist()
+    for k in range(2):
+        magie[k] = "/network/lustre/iss01" + magie[k]
+    fin = uf.gfile(magie ,'^s.*nii')
 
-    faff = uf.gfile(din.tolist(),'^aff.*txt')
+    faff = uf.gfile(magie ,'^aff.*txt')
     l_view=[("sag", "mm", 0) for i in range(0,3,1)]
     l_view = [("sag", "vox", 0.5),("sag", "mm", 0),("sag", "mm_mni", 0),
               ("ax", "vox", 0.5), ("ax", "mm", 0), ("ax", "mm_mni", 0),
@@ -358,7 +361,7 @@ if __name__ == "__main__":
               ("cor", "vox", 0.5), ("cor", "voxmm", 54),  ("cor", "mm", 54),  ("cor", "mm_mni", 54),]
 
     mask_info = [("whole", -1) for i in range(0,12,1)]
-    display_order =  np.array([4,3]) # row and column of the montage
+    display_order =  np.array([3,4]) # row and column of the montage
 
     fref=nb.load('/network/lustre/iss01/cenir/analyse/irm/users/romain.valabregue/dicom/mni/tpl_mni_aff/mean_rmni1Kcrop.nii.gz')
 
